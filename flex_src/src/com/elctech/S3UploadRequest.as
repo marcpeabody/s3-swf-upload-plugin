@@ -6,6 +6,7 @@ package com.elctech {
 	import flash.xml.XMLDocument;
 	import flash.xml.XMLNode;
 	import mx.controls.Alert;
+  import com.edgecase.S3FileData;
 	
 	/**
      * This class encapsulates a POST request to S3.
@@ -16,22 +17,23 @@ package com.elctech {
 	public class S3UploadRequest extends EventDispatcher {
 		
 		[Event(name="open", type="flash.events.Event.OPEN")]
-        [Event(name="uploadCompleteData", type="flash.events.DataEvent.UPLOAD_COMPLETE_DATA")]        
-        [Event(name="ioError", type="flash.events.IOErrorEvent.IO_ERROR")]
-        [Event(name="securityError", type="flash.events.SecurityErrorEvent.SECURITY_ERROR")]
-        [Event(name="progress", type="flash.events.ProgressEvent.PROGRESS")]
+    [Event(name="uploadCompleteData", type="flash.events.DataEvent.UPLOAD_COMPLETE_DATA")]        
+    [Event(name="ioError", type="flash.events.IOErrorEvent.IO_ERROR")]
+    [Event(name="securityError", type="flash.events.SecurityErrorEvent.SECURITY_ERROR")]
+    [Event(name="progress", type="flash.events.ProgressEvent.PROGRESS")]
         
-        private var _accessKeyId:String;
-        private var _bucket:String;
-        private var _key:String;
-        private var _options:S3UploadOptions;
-        private var _httpStatusErrorReceived:Boolean;
-        private var _uploadStarted:Boolean;
-        private var _fileReference:FileReference;
+    private var _accessKeyId:String;
+    private var _bucket:String;
+    private var _key:String;
+    private var _options:S3UploadOptions;
+    private var _fileData:S3FileData;
+    private var _httpStatusErrorReceived:Boolean;
+    private var _uploadStarted:Boolean;
+    private var _fileReference:FileReference;
         
-        private const ENDPOINT:String = "s3.amazonaws.com";
-        private const MIN_BUCKET_LENGTH:int = 3;
-        private const MAX_BUCKET_LENGTH:int = 63;
+    private const ENDPOINT:String = "s3.amazonaws.com";
+    private const MIN_BUCKET_LENGTH:int = 3;
+    private const MAX_BUCKET_LENGTH:int = 63;
 		
 		
 		/**
@@ -41,34 +43,35 @@ package com.elctech {
          * @param    key The key to create
          * @param    options Options for this request
          */
-		public function S3UploadRequest(options:S3UploadOptions) {
-			
-            _accessKeyId = options.AWSAccessKeyId;
-            _bucket      = options.bucket;
-            _key         = options.key;
-            _options     = options;
+		public function S3UploadRequest(fileData:S3FileData) {
+      trace('options key: '+fileData.options.key);
+      _accessKeyId = fileData.options.AWSAccessKeyId;
+      _bucket      = fileData.options.bucket;
+      _key         = fileData.options.key;
+      _options     = fileData.options;
+      _fileData    = fileData;
 		}
 		
 		private function buildUrl():String {
 
-            var canUseVanityStyle:Boolean = canUseVanityStyle(_bucket);
+        var canUseVanityStyle:Boolean = canUseVanityStyle(_bucket);
             
-            if(_options.Secure!="false" && canUseVanityStyle && _bucket.match(/\./)) {
-                // We cannot use SSL for bucket names containing "."
-                // The certificate won't match "my.bucket.s3.amazonaws.com"
-                throw new SecurityError("Cannot use SSL with bucket name containing '.': " + _bucket);
-            }
-            
-            var postUrl:String = "http" + ((_options.Secure == 'true') ? "s" : "") + "://";
-            
-            if(canUseVanityStyle) {
-                postUrl += _bucket + "." + ENDPOINT;
-            } else {
-                postUrl += ENDPOINT + "/" + _bucket;
-            }
-            
-            return postUrl;
+        if(_options.Secure!="false" && canUseVanityStyle && _bucket.match(/\./)) {
+            // We cannot use SSL for bucket names containing "."
+            // The certificate won't match "my.bucket.s3.amazonaws.com"
+            throw new SecurityError("Cannot use SSL with bucket name containing '.': " + _bucket);
         }
+            
+        var postUrl:String = "http" + ((_options.Secure == 'true') ? "s" : "") + "://";
+            
+        if(canUseVanityStyle) {
+            postUrl += _bucket + "." + ENDPOINT;
+        } else {
+            postUrl += ENDPOINT + "/" + _bucket;
+        }
+            
+        return postUrl;
+    }
         
         private function canUseVanityStyle(bucket:String):Boolean {
             if( bucket.length < MIN_BUCKET_LENGTH ||
@@ -119,7 +122,7 @@ package com.elctech {
          * @param    fileReference A FileReference object referencing the file to upload to S3.
          */
         public function upload(fileReference:FileReference):void {
-            
+            trace('start upload in S3UR'); 
             if(_uploadStarted) {
                 throw new Error("S3PostRequest object cannot be reused.  Create another S3PostRequest object to send another request to Amazon S3.");
             }
@@ -143,7 +146,7 @@ package com.elctech {
             fileReference.addEventListener(DataEvent.UPLOAD_COMPLETE_DATA, onUploadCompleteData);
             fileReference.addEventListener(HTTPStatusEvent.HTTP_STATUS, onHttpStatus);
             // *****************************************************************************
-            
+           
             // send the request
             fileReference.upload(urlRequest, "file", false);
         }
@@ -156,7 +159,7 @@ package com.elctech {
             postVariables.acl             = _options.acl;
             postVariables.AWSAccessKeyId  = _accessKeyId;
             postVariables.signature       = _options.signature;
-            postVariables["Content-Type"] = _options.ContentType;
+            postVariables["Content-Type"] = _fileData.ContentType;
             postVariables.policy          = _options.policy;
             
             /**
